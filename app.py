@@ -27,6 +27,8 @@ import requests
 import json
 
 from tokushima_opendata.tourist_spot import get_tourist_spot
+from tokushima_opendata.tourist_spot import get_hotel
+from tokushima_opendata.tourist_spot import get_wifi_spot
 
 app = Flask(__name__)
 
@@ -69,30 +71,32 @@ def callback():
     except InvalidSignatureError:
         abort(400)
 
-    print(events)
+    #print(events)
     for event in events:
         user_id = event.source.sender_id
 
         if isinstance(event, PostbackEvent):
-            print(str(event.postback.data))
+            #print(str(event.postback.data))
             try:
                 pos = userLocDict[str(user_id)].split(',')
+                lng = pos[0]
+                lat = pos[1]
             except KeyError:
                 #post_text(event.reply_token, '+ から位置情報を送ってね')
-                #break;
-                pos = ['135.0','35.0']
-            lng = pos[0]
-            lat = pos[1]
+                #break
+                lng = 134.398391
+                lat = 34.122109
 
             if re.search('.*=0',event.postback.data):
-                reslt = get_tourist_spot(lng, lat)
-                print(result)
+                result = get_tourist_spot(lng, lat)
+                post_tourist_spot_carousel(event.reply_token, result)
             elif re.search('.*=1',event.postback.data):
-                reslt = get_hotel(lng, lat)
-                print(result)
+                result = get_hotel(lng, lat)
+                #print(result)
             elif re.search('.*=2',event.postback.data):
-                reslt = get_tourism_hotel(lng, lat)
-                print(result)
+                result = get_wifi_spot(lng, lat)
+                #result = get_wifi_spot(lng, lat)
+                #print(result)
 
         if not isinstance(event, MessageEvent):
             continue
@@ -119,23 +123,24 @@ def receiveText(event):
         post_kind(event.reply_token)
 
     received_text = event.message.text
-    if re.search('観光', received_text):
-        get_tourist_spot()
-        post_text(event.reply_token, 'kankou')
+    if re.search('観光地', received_text):
+        try:
+            result = get_tourist_spot()
+            post_tourist_spot_carousel(event.reply_token, result)
+        except Exception as e:
+            print(e)
     elif re.search('ホテル', received_text):
         try:
             post_carousel(event.reply_token)
         except Exception as e:
             print(e)
-    elif re.search('タクシー', received_text):
-        post_text(event.reply_token, 'taxi')
     elif re.search('Wi-Fi', received_text):
         post_text(event.reply_token, 'Wi-Fi')
+    #elif re.search('タクシー', received_text):
+    #    post_text(event.reply_token, 'taxi')
+
     else:
-        try:
-            post_text(event.reply_token, received_text)
-        except Exception as e:
-            print(e)
+        post_text(event.reply_token, received_text)
 
 def post_text(token, text):
     line_bot_api.reply_message(
@@ -177,7 +182,7 @@ def post_kind(token):
                         },
                         {
                             "type" : "postback",
-                            "label": "手ぶら観光指定宿泊施設",
+                            "label": "Wi-Fiスポット",
                             "data"  : "action=2"
                         }
                     ]
@@ -193,6 +198,50 @@ def post_kind(token):
     }
     requests.post(REPLY_ENDPOINT, headers=HEADER, data=json.dumps(payload))
 
+def get_tourist_spot_columns(places):
+    columns = []
+    for place in places:
+        print("https://maps.google.co.jp/maps?q="+str(place['lat'])+","+str(place['lng']))
+        print("http://google.com/search?q="+str(place['name']))
+        columns.append({
+                "title": place['name'],
+                "text" : place['address'],
+                "actions": [
+                    {
+                        "type": "uri",
+                        "label": "マップ",
+                        "uri": "https://maps.google.co.jp/maps?q="+str(place['lat'])+","+str(place['lng'])
+                    },
+                    {
+                        "type": "uri",
+                        "label": "詳しく",
+                        "uri": "http://google.com/search?q="+str(place['name'])
+                    }
+                ]
+            })
+    return columns
+
+def post_tourist_spot_carousel(token, place_list):
+    payload = {
+        "replyToken":token,
+        "messages":[
+            {
+                "type" :"template",
+                "altText" :"tourist spots",
+                "template" :{
+                    "type" :"carousel",
+                    "columns" :get_tourist_spot_columns(place_list)
+                }
+            }
+        ]
+    }
+
+    REPLY_ENDPOINT = 'https://api.line.me/v2/bot/message/reply'
+    HEADER = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " +channel_access_token
+    }
+    requests.post(REPLY_ENDPOINT, headers=HEADER,data=json.dumps(payload))
 
 def post_carousel(token):
     payload = {
