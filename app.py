@@ -1,17 +1,5 @@
 # -*- coding: utf-8 -*-
 
-#  Licensed under the Apache License, Version 2.0 (the "License"); you may
-#  not use this file except in compliance with the License. You may obtain
-#  a copy of the License at
-#
-#       https://www.apache.org/licenses/LICENSE-2.0
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-#  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-#  License for the specific language governing permissions and limitations
-#  under the License.
-
 from __future__ import unicode_literals
 
 import os
@@ -27,25 +15,24 @@ from linebot.exceptions import (
 )
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage,
-    ImageSendMessage
+    ImageSendMessage, LocationMessage,
+    SourceUser, PostbackEvent, 
 )
-#added
+
 import re
 from datetime import datetime
 from datetime import timedelta
 import time
-
-import image
-from io import StringIO
-
 import requests
 import json
 
+from tokushima_opendata.tourist_spot import get_tourist_spot
+
 app = Flask(__name__)
 
-# get channel_secret and channel_access_token from your environment variable
-channel_secret = os.getenv('LINE_CHANNEL_SECRET', None)
 channel_access_token = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', None)
+channel_secret = os.getenv('LINE_CHANNEL_SECRET', None)
+
 host_name = 'https://nameless-gorge-55138.herokuapp.com'
 host_name = 'https://162c3259.ngrok.io'
 
@@ -59,6 +46,7 @@ if channel_access_token is None:
 line_bot_api = LineBotApi(channel_access_token)
 parser = WebhookParser(channel_secret)
 
+userLocDict = {}
 
 @app.route('/img-sam/<path:filename>')
 def image(filename):
@@ -73,54 +61,87 @@ def csv(filename):
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
-
-    # get request body as text
     body = request.get_data(as_text=True)
     app.logger.info("Request body: " + body)
-
-    # parse webhook body
+    
     try:
         events = parser.parse(body, signature)
     except InvalidSignatureError:
         abort(400)
 
-    # if event is MessageEvent and message is TextMessage, then echo text
-    #print(events)
+    print(events)
     for event in events:
+        user_id = event.source.sender_id
+
+        if isinstance(event, PostbackEvent):
+            print(str(event.postback.data))
+            try:
+                pos = userLocDict[str(user_id)].split(',')
+            except KeyError:
+                #post_text(event.reply_token, '+ から位置情報を送ってね')
+                #break;
+                pos = ['135.0','35.0']
+            lng = pos[0]
+            lat = pos[1]
+
+            if re.search('.*=0',event.postback.data):
+                reslt = get_tourist_spot(lng, lat)
+                print(result)
+            elif re.search('.*=1',event.postback.data):
+                reslt = get_hotel(lng, lat)
+                print(result)
+            elif re.search('.*=2',event.postback.data):
+                reslt = get_tourism_hotel(lng, lat)
+                print(result)
+
         if not isinstance(event, MessageEvent):
             continue
-        if not isinstance(event.message, TextMessage):
-            continue
         
-        received_text = event.message.text
-
-        if re.search('観光', received_text):
-            from tokushima_opendata.tourist_spot import get_tourist_spot
-            get_tourist_spot()
-            post_text(event.reply_token, 'kankou')
-
-        elif re.search('ホテル', received_text):
-            try:
-                post_carousel(event.reply_token)
-            except Exception as e:
-                print(e)
-        elif re.search('タクシー', received_text):
-            post_text(event.reply_token, 'taxi')
+        if isinstance(event.message, TextMessage):
+            receiveText(event)
         
-        elif re.search('Wi-Fi', received_text):
-            post_text(event.reply_token, 'Wi-Fi')
-        
-        else:
-            post_text(event.reply_token, received_text)
-    
+        if isinstance(event.message, LocationMessage):
+            lng = event.message.longitude
+            lat = event.message.latitude
+            pos = str(lng)+','+str(lat)
+            #print(pos)
+            userLocDict[str(user_id)] = pos
+            #print(userLocDict)
+            post_kind(event.reply_token)
     return 'OK'
+
+def receiveText(event):
+    user_id = event.source.sender_id
+    if user_id not in userLocDict:
+        post_text(event.reply_token, '+ から位置情報を送ってね')
+        return None
+    else:
+        post_kind(event.reply_token)
+
+    received_text = event.message.text
+    if re.search('観光', received_text):
+        get_tourist_spot()
+        post_text(event.reply_token, 'kankou')
+    elif re.search('ホテル', received_text):
+        try:
+            post_carousel(event.reply_token)
+        except Exception as e:
+            print(e)
+    elif re.search('タクシー', received_text):
+        post_text(event.reply_token, 'taxi')
+    elif re.search('Wi-Fi', received_text):
+        post_text(event.reply_token, 'Wi-Fi')
+    else:
+        try:
+            post_text(event.reply_token, received_text)
+        except Exception as e:
+            print(e)
 
 def post_text(token, text):
     line_bot_api.reply_message(
         token,
         TextSendMessage(text=text)
     )
-
 
 def post_image(token, image_path):
     image_message = ImageSendMessage(
@@ -131,6 +152,47 @@ def post_image(token, image_path):
         token,
         image_message
     )
+
+def post_kind(token):
+    payload = {
+        "replyToken":token,
+        "messages":[
+            {
+                "type"    :"template",
+                "altText" :"select destination",
+                "template":{
+                    "type"   :"buttons",
+                    "text"  :"どこに行きたいですか？",
+                    #"title"   :"行先を選択してください",
+                    "actions":[
+                        {
+                            "type" :"postback",
+                            "label":"観光地",
+                            "data" :"action=0"
+                        },
+                        {
+                            "type" : "postback",
+                            "label": "ホテル",
+                            "data" : "action=1"
+                        },
+                        {
+                            "type" : "postback",
+                            "label": "手ぶら観光指定宿泊施設",
+                            "data"  : "action=2"
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+    print(payload)
+    REPLY_ENDPOINT = 'https://api.line.me/v2/bot/message/reply'
+    HEADER = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer "+channel_access_token
+    }
+    requests.post(REPLY_ENDPOINT, headers=HEADER, data=json.dumps(payload))
+
 
 def post_carousel(token):
     payload = {
