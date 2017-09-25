@@ -15,7 +15,7 @@ from linebot.exceptions import (
 )
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage,
-    ImageSendMessage, LocationMessage,
+    ImageSendMessage, LocationSendMessage, LocationMessage,
     SourceUser, PostbackEvent, 
 )
 
@@ -49,6 +49,8 @@ line_bot_api = LineBotApi(channel_access_token)
 parser = WebhookParser(channel_secret)
 
 userLocDict = {}
+_DEBUG = True
+_DUMMY_POS = '134.398391,34.122109'
 
 @app.route('/img-sam/<path:filename>')
 def image(filename):
@@ -77,27 +79,20 @@ def callback():
 
         if isinstance(event, PostbackEvent):
             #print(str(event.postback.data))
-            try:
-                pos = userLocDict[str(user_id)].split(',')
-                lng = pos[0]
-                lat = pos[1]
-            except KeyError:
-                #post_text(event.reply_token, '+ から位置情報を送ってね')
-                #break
-                lng = 134.398391
-                lat = 34.122109
+            if re.search('action=loc', event.postback.data):
+                name = event.postback.data.split('&')[1].split('=')[1]
+                address = event.postback.data.split('&')[2].split('=')[1]
+                lng = event.postback.data.split('&')[3].split('=')[1]
+                lat = event.postback.data.split('&')[4].split('=')[1]
+                #print(address)
+                post_location(event.reply_token, title=name, address=address, latitude=lat,longitude=lng)
 
-            if re.search('.*=0',event.postback.data):
-                result = get_tourist_spot(lng, lat)
-                post_tourist_spot_carousel(event.reply_token, result)
-            elif re.search('.*=1',event.postback.data):
-                result = get_hotel(lng, lat)
-                #print(result)
-            elif re.search('.*=2',event.postback.data):
-                result = get_wifi_spot(lng, lat)
-                #result = get_wifi_spot(lng, lat)
-                #print(result)
+            if re.search('action=detail', event.postback.data):
+                name = event.postback.data.split('&')[1].split('=')[1]
+                #print(name)
+                post_text(event.reply_token, "https://google.co.jp/search?q="+name)
 
+        # FollowEvent, JoinEvent の処理はしない
         if not isinstance(event, MessageEvent):
             continue
         
@@ -112,32 +107,48 @@ def callback():
             userLocDict[str(user_id)] = pos
             #print(userLocDict)
             post_kind(event.reply_token)
+
     return 'OK'
 
 def receiveText(event):
     user_id = event.source.sender_id
-    if user_id not in userLocDict:
-        post_text(event.reply_token, '+ から位置情報を送ってね')
-        return None
+    received_text = event.message.text
+    if user_id not in userLocDict and _DEBUG:
+        userLocDict[user_id] = _DUMMY_POS
+
+    if user_id in userLocDict:
+        pos = userLocDict[str(user_id)].split(',')
+        lng = pos[0]
+        lat = pos[1]
     else:
+        print("位置情報がありません")
+
+    if re.search('案内', received_text):
+        if user_id not in userLocDict:
+            post_text(event.reply_token, '+ から位置情報を送ってね')
+            return 'no location data'
         post_kind(event.reply_token)
 
-    received_text = event.message.text
-    if re.search('観光地', received_text):
+    elif re.search('観光地', received_text):
+        if user_id not in userLocDict:
+            post_text(event.reply_token, '+ から位置情報を送ってね')
+            return 'no location data'
         try:
-            result = get_tourist_spot()
-            post_tourist_spot_carousel(event.reply_token, result)
+            result = get_tourist_spot(lng, lat)
+            post_spot_carousel('tour', event.reply_token, result)
         except Exception as e:
             print(e)
     elif re.search('ホテル', received_text):
         try:
-            post_carousel(event.reply_token)
+            result = get_hotel(lng, lat)
+            print(result)
+            post_spot_carousel('hotel', event.reply_token, result)
         except Exception as e:
             print(e)
-    elif re.search('Wi-Fi', received_text):
-        post_text(event.reply_token, 'Wi-Fi')
-    #elif re.search('タクシー', received_text):
-    #    post_text(event.reply_token, 'taxi')
+    elif re.search('Wi-Fi', received_text) or re.search('WiFi', received_text):
+        result = get_wifi_spot(lng, lat)
+        print(result)
+        post_spot_carousel('wifi',event.reply_token, result)
 
     else:
         post_text(event.reply_token, received_text)
@@ -146,6 +157,18 @@ def post_text(token, text):
     line_bot_api.reply_message(
         token,
         TextSendMessage(text=text)
+    )
+
+def post_location(token, title=None, address=None, latitude=None, longitude=None):
+    location_message = LocationSendMessage(
+        title=title,
+        address=address,
+        latitude=latitude,
+        longitude=longitude,
+    )
+    line_bot_api.reply_message(
+        token,
+        location_message
     )
 
 def post_image(token, image_path):
@@ -171,26 +194,26 @@ def post_kind(token):
                     #"title"   :"行先を選択してください",
                     "actions":[
                         {
-                            "type" :"postback",
+                            "type" :"message",
                             "label":"観光地",
-                            "data" :"action=0"
+                            "text" :"観光地を教えて"
                         },
                         {
-                            "type" : "postback",
+                            "type" : "message",
                             "label": "ホテル",
-                            "data" : "action=1"
+                            "text" : "ホテルを教えて"
                         },
                         {
-                            "type" : "postback",
+                            "type" : "message",
                             "label": "Wi-Fiスポット",
-                            "data"  : "action=2"
+                            "text"  : "Wi-Fiスポットを教えて"
                         }
                     ]
                 }
             }
         ]
     }
-    print(payload)
+    #print(payload)
     REPLY_ENDPOINT = 'https://api.line.me/v2/bot/message/reply'
     HEADER = {
         "Content-Type": "application/json",
@@ -198,39 +221,23 @@ def post_kind(token):
     }
     requests.post(REPLY_ENDPOINT, headers=HEADER, data=json.dumps(payload))
 
-def get_tourist_spot_columns(places):
-    columns = []
-    for place in places:
-        print("https://maps.google.co.jp/maps?q="+str(place['lat'])+","+str(place['lng']))
-        print("http://google.com/search?q="+str(place['name']))
-        columns.append({
-                "title": place['name'],
-                "text" : place['address'],
-                "actions": [
-                    {
-                        "type": "uri",
-                        "label": "マップ",
-                        "uri": "https://maps.google.co.jp/maps?q="+str(place['lat'])+","+str(place['lng'])
-                    },
-                    {
-                        "type": "uri",
-                        "label": "詳しく",
-                        "uri": "http://google.com/search?q="+str(place['name'])
-                    }
-                ]
-            })
-    return columns
+def post_spot_carousel(kind, token, place_list):
+    if kind is 'tour':
+        columns = get_tourist_spot_columns(place_list)
+    elif kind is 'hotel':
+        columns = get_hotel_columns(place_list)
+    elif kind is 'wifi':
+        columns = get_wifi_spot_columns(place_list)
 
-def post_tourist_spot_carousel(token, place_list):
     payload = {
         "replyToken":token,
         "messages":[
             {
                 "type" :"template",
-                "altText" :"tourist spots",
+                "altText" :"this is template",
                 "template" :{
                     "type" :"carousel",
-                    "columns" :get_tourist_spot_columns(place_list)
+                    "columns" :columns
                 }
             }
         ]
@@ -243,84 +250,83 @@ def post_tourist_spot_carousel(token, place_list):
     }
     requests.post(REPLY_ENDPOINT, headers=HEADER,data=json.dumps(payload))
 
-def post_carousel(token):
-    payload = {
-        "replyToken":token,
-        "messages":[
+def get_tourist_spot_columns(places):
+    columns = []
+    for place in places:
+        #print("https://maps.google.co.jp/maps?q="+str(place['lat'])+","+str(place['lng']))
+        #print("http://google.com/search?q="+str(place['name']))
+        columns.append({
+                "title": place['name'],
+                "text" : place['address'],
+                "actions": [
+                    {
+                        "type" : "postback",
+                        "label": "位置情報",
+                        "data" : "action=loc&name="+place['name']+"&address="+place['address']+"&lng="+str(place['lng'])+"&lat="+str(place['lat']),
+                    },
+                    {
+                        "type" : "postback",
+                        #"type": "uri",
+                        "label": "詳しく",
+                        #"uri":"https://google.co.jp/search?q="+place['name']
+                        "data" : "action=detail&name="+place['name'],
+                    }
+                ]
+            })
+    return columns
+
+def get_hotel_columns(places):
+    columns = []
+    exitst_hp = True
+    for place in places:
+        if str(place['url']) is 'nan':
+            exitst_hp = False
+            break
+
+    for place in places:
+        print(str(place['url']))
+        actions = [
             {
-                "type"    :"template",
-                "altText" :"this is template",
-                "template":{
-                    "type"   :"carousel",
-                    "columns":[
-                        {
-                           # "thumbnailImageUrl": host_name+"/img-sam/01.jpg",
-                            "title":"徳島グランドホテル偕楽園",
-                            "text" :"徳島市伊賀町1丁目8",
-                            "actions":[
-                                {
-                                    "type" :"postback",
-                                    "label":"電話",
-                                    "data" :"action=add&itemid=1"
-                                },
-                                {
-                                    "type" : "postback",
-                                    "label": "マップ",
-                                    "data" : "action=add&itemid=111"
-                                },
-                                {
-                                    "type" : "uri",
-                                    "label": "詳しく",
-                                    "uri"  : "http://google.com/search?q="+"徳島グランドホテル偕楽園"
-                                }
-                            ]
-                        },
-                        {
-                           # "thumbnailImageUrl": host_name+"/img-sam/02.jpg",
-                            "title":"this is menu",
-                            "text" :"description",
-                            "actions":[
-                                {
-                                    "type" :"postback",
-                                    "label":"buy",
-                                    "data" :"action=add&itemid=1"
-                                },
-                                {
-                                    "type" : "postback",
-                                    "label": "Add to cart",
-                                    "data" : "action=add&itemid=111"
-                                },
-                                {
-                                    "type" : "uri",
-                                    "label": "View detail",
-                                    "uri"  : "http://google.com"
-                                }
-                            ]
-                        }
-                    ]
-                }
+                "type": "postback",
+                "label": "位置情報",
+                "data": "action=loc&name=" + place['name'] + "&address=" + place['address'] + "&lng=" + str(
+                    place['lng']) + "&lat=" + str(place['lat']),
+            },{
+                "type": "uri",
+                "label": "電話",
+                "uri":str("tel:"+place['tel'])
             }
         ]
-    }
-    '''
-    payload = {
-        "replyToken":token,
-            "messages":[
+        if exitst_hp:
+            actions.append({
+                "type": "uri",
+                "label": "ホームページ",
+                "uri": str(place['url'])
+            })
+
+        columns.append({
+            "title": place['name'],
+            "text": place['address'],
+            "actions": actions
+        })
+    return columns
+
+def get_wifi_spot_columns(places):
+    columns = []
+    for place in places:
+        columns.append({
+            "title": place['name'],
+            "text": place['address'],
+            "actions": [
                 {
-                    "type":"text",
-                    "text": 'abc'
+                    "type": "postback",
+                    "label": "位置情報",
+                    "data": "action=loc&name=" + place['name'] + "&address=" + place['address'] + "&lng=" + str(
+                        place['lng']) + "&lat=" + str(place['lat']),
                 }
-            ]    
-    }'''
-    print('-----\n')
-    print(payload)
-    print('-----\n')
-    REPLY_ENDPOINT = 'https://api.line.me/v2/bot/message/reply'
-    HEADER = {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " +channel_access_token
-    }
-    requests.post(REPLY_ENDPOINT, headers=HEADER,data=json.dumps(payload)) # LINEにデータを送信   
+            ]
+        })
+    return columns
 
 if __name__ == "__main__":
     arg_parser = ArgumentParser(
@@ -329,5 +335,4 @@ if __name__ == "__main__":
     arg_parser.add_argument('-p', '--port', default=8000, help='port')
     arg_parser.add_argument('-d', '--debug', default=False, help='debug')
     options = arg_parser.parse_args()
-
     app.run(debug=options.debug, port=options.port)
