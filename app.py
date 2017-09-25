@@ -49,7 +49,7 @@ line_bot_api = LineBotApi(channel_access_token)
 parser = WebhookParser(channel_secret)
 
 userLocDict = {}
-_DEBUG = True
+_DEBUG = False
 _DUMMY_POS = '134.398391,34.122109'
 
 @app.route('/img-sam/<path:filename>')
