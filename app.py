@@ -65,6 +65,7 @@ def csv(filename):
 
 @app.route("/callback", methods=['POST'])
 def callback():
+    global userLocDict
     signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
     app.logger.info("Request body: " + body)
@@ -112,11 +113,12 @@ def callback():
     return 'OK'
 
 def receiveText(event):
+    global userLocDict
     user_id = event.source.sender_id
     received_text = event.message.text
+
     if user_id not in userLocDict and _DEBUG:
         userLocDict[user_id] = _DUMMY_POS
-
     if user_id in userLocDict:
         pos = userLocDict[str(user_id)].split(',')
         lng = pos[0]
@@ -134,28 +136,40 @@ def receiveText(event):
         if user_id not in userLocDict:
             post_text(event.reply_token, '+ から位置情報を送ってね')
             return 'no location data'
-        try:
-            result = get_tourist_spot(lng, lat)
-            post_spot_carousel('tour', event.reply_token, result)
-        except Exception as e:
-            print(e)
+        else:
+            try:
+                result = get_tourist_spot(lng, lat)
+                post_spot_carousel('tour', event.reply_token, result)
+            except Exception as e:
+                print(e)
     elif re.search('ホテル', received_text):
-        try:
-            result = get_hotel(lng, lat)
-            post_spot_carousel('hotel', event.reply_token, result)
-        except Exception as e:
-            print(e)
+        if user_id not in userLocDict:
+            post_text(event.reply_token, '+ から位置情報を送ってね')
+            return 'no location data'
+        else:
+            try:
+                result = get_hotel(lng, lat)
+                post_spot_carousel('hotel', event.reply_token, result)
+            except Exception as e:
+                print(e)
     elif re.search('Wi-Fi', received_text) or re.search('WiFi', received_text):
-        result = get_wifi_spot(lng, lat)
-        post_spot_carousel('wifi',event.reply_token, result)
-
+        if user_id not in userLocDict:
+            post_text(event.reply_token, '+ から位置情報を送ってね')
+            return 'no location data'
+        else:
+            try:
+                result = get_wifi_spot(lng, lat)
+                post_spot_carousel('wifi',event.reply_token, result)
+            except Exception as e:
+                print(e)
     else:
         reply = get_reply(received_text)
-        print(reply)
+        #print(reply)
         try:
             post_text(event.reply_token, reply)
         except Exception as e:
             print(e)
+            
 def post_text(token, text):
     line_bot_api.reply_message(
         token,
