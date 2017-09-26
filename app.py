@@ -141,13 +141,11 @@ def receiveText(event):
     elif re.search('ホテル', received_text):
         try:
             result = get_hotel(lng, lat)
-            print(result)
             post_spot_carousel('hotel', event.reply_token, result)
         except Exception as e:
             print(e)
     elif re.search('Wi-Fi', received_text) or re.search('WiFi', received_text):
         result = get_wifi_spot(lng, lat)
-        print(result)
         post_spot_carousel('wifi',event.reply_token, result)
 
     else:
@@ -191,7 +189,6 @@ def post_kind(token):
                 "template":{
                     "type"   :"buttons",
                     "text"  :"どこに行きたいですか？",
-                    #"title"   :"行先を選択してください",
                     "actions":[
                         {
                             "type" :"message",
@@ -279,12 +276,11 @@ def get_hotel_columns(places):
     columns = []
     exitst_hp = True
     for place in places:
-        if str(place['url']) is 'nan':
-            exitst_hp = False
-            break
+        if type(place['url']) is float:
+           exitst_hp = False
 
     for place in places:
-        print(str(place['url']))
+        print(type(place['url']))
         actions = [
             {
                 "type": "postback",
@@ -296,14 +292,14 @@ def get_hotel_columns(places):
                 "label": "電話",
                 "uri":str("tel:"+place['tel'])
             }
+
         ]
         if exitst_hp:
             actions.append({
                 "type": "uri",
                 "label": "ホームページ",
-                "uri": str(place['url'])
+                "uri": place['url']
             })
-
         columns.append({
             "title": place['name'],
             "text": place['address'],
@@ -321,9 +317,8 @@ def get_wifi_spot_columns(places):
                 {
                     "type": "postback",
                     "label": "位置情報",
-                    "data": "action=loc&name=" + place['name'] + "&address=" + place['address'] + "&lng=" + str(
-                        place['lng']) + "&lat=" + str(place['lat']),
-                }
+                    "data": "action=loc&name=" + place['name'] + "&address=" + place['address'] + "&lng=" + str(place['lng']) + "&lat=" + str(place['lat']),
+                },
             ]
         })
     return columns
