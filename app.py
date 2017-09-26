@@ -29,6 +29,7 @@ import json
 from tokushima_opendata.tourist_spot import get_tourist_spot
 from tokushima_opendata.tourist_spot import get_hotel
 from tokushima_opendata.tourist_spot import get_wifi_spot
+from UserLocalApi import get_reply
 
 app = Flask(__name__)
 
@@ -149,8 +150,12 @@ def receiveText(event):
         post_spot_carousel('wifi',event.reply_token, result)
 
     else:
-        post_text(event.reply_token, received_text)
-
+        reply = get_reply(received_text)
+        print(reply)
+        try:
+            post_text(event.reply_token, reply)
+        except Exception as e:
+            print(e)
 def post_text(token, text):
     line_bot_api.reply_message(
         token,
