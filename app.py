@@ -108,7 +108,8 @@ def callback():
 
 def get_user_pos(user_id):
     global userLocDict
-    print(userLocDict)
+    print('user id:',user_id)
+    print('loc:',userLocDict)
     if user_id not in userLocDict and _DEBUG:
         userLocDict[user_id] = _DUMMY_POS
 
@@ -133,6 +134,7 @@ def receiveText(event):
         if pos is None:
             post_text(event.reply_token, '+ から位置情報を送ってね')
         else:
+            pos = get_user_pos(user_id)
             result = get_tourist_spot(pos[0], pos[1])
             post_spot_carousel('tour', event.reply_token, result)
     elif re.search('ホテル', received_text):
