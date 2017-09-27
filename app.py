@@ -16,7 +16,7 @@ from linebot.exceptions import (
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage,
     ImageSendMessage, LocationSendMessage, LocationMessage,
-    SourceUser, PostbackEvent, 
+    SourceUser, PostbackEvent,
 )
 
 import re
@@ -30,12 +30,14 @@ from tokushima_opendata.tourist_spot import get_tourist_spot
 from tokushima_opendata.tourist_spot import get_hotel
 from tokushima_opendata.tourist_spot import get_wifi_spot
 from UserLocalApi import get_reply
+from user_location import get_location
+from user_location import save_location
 
 app = Flask(__name__)
 
 channel_access_token = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', None)
 channel_secret = os.getenv('LINE_CHANNEL_SECRET', None)
-#host_name = 'https://nameless-gorge-55138.herokuapp.com'
+# host_name = 'https://nameless-gorge-55138.herokuapp.com'
 
 if channel_secret is None:
     print('Specify LINE_CHANNEL_SECRET as environment variable.')
@@ -51,21 +53,23 @@ userLocDict = {}
 _DEBUG = False
 _DUMMY_POS = '134.398391,34.122109'
 
+
 @app.route('/img-sam/<path:filename>')
 def image(filename):
     return send_from_directory('img', filename)
 
 
 @app.route('/tmp/<path:filename>')
-def csv(filename):  
+def csv(filename):
     return send_from_directory('tmp', filename)
+
 
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
     app.logger.info("Request body: " + body)
-    
+
     try:
         events = parser.parse(body, signature)
     except InvalidSignatureError:
@@ -75,19 +79,21 @@ def callback():
         user_id = event.source.sender_id
 
         if isinstance(event, PostbackEvent):
-            #print(str(event.postback.data))
+            # print(str(event.postback.data))
             if re.search('action=loc', event.postback.data):
-                name = event.postback.data.split('&')[1].split('=')[1]
-                address = event.postback.data.split('&')[2].split('=')[1]
-                lng = event.postback.data.split('&')[3].split('=')[1]
-                lat = event.postback.data.split('&')[4].split('=')[1]
-                #print(address)
-                post_location(event.reply_token, title=name, address=address, latitude=lat,longitude=lng)
+                params = event.postback.data.split('&')
+                name = params[1].split('=')[1]
+                address =params[2].split('=')[1]
+                lat = params[3].split('=')[1]
+                lng = params[4].split('=')[1]
+
+                # print(address)
+                post_location(event.reply_token, title=name, address=address, latitude=lat, longitude=lng)
 
             if re.search('action=detail', event.postback.data):
                 name = event.postback.data.split('&')[1].split('=')[1]
-                #print(name)
-                post_text(event.reply_token, "https://google.co.jp/search?q="+name)
+                # print(name)
+                post_text(event.reply_token, "https://google.co.jp/search?q=" + name)
 
         # FollowEvent, JoinEvent の処理はしない
         if not isinstance(event, MessageEvent):
@@ -95,70 +101,64 @@ def callback():
 
         if isinstance(event.message, TextMessage):
             receiveText(event)
-        
+
         if isinstance(event.message, LocationMessage):
-            lng = event.message.longitude
             lat = event.message.latitude
-            pos = str(lng)+','+str(lat)
-            global userLocDict
-            userLocDict[str(user_id)] = pos
-            print('set userLocDict:',userLocDict)
+            lng = event.message.longitude
+            save_location(user_id, lat, lng)
             post_kind(event.reply_token)
+
     return 'OK'
 
-def get_user_pos(user_id):
-    global userLocDict
-    print('user id:',user_id)
-    print('loc:',userLocDict)
-    if user_id not in userLocDict and _DEBUG:
-        userLocDict[user_id] = _DUMMY_POS
-
-    if user_id in userLocDict:
-        pos = userLocDict[str(user_id)].split(',')
-        return pos
-    else:
-        print("位置情報がありません")
-        return None
 
 def receiveText(event):
     user_id = event.source.sender_id
     received_text = event.message.text
-    pos = get_user_pos(user_id)
+    loc_dict = get_location(user_id)
 
     if re.search('案内', received_text):
-        if pos is None:
+        if loc_dict is None:
             post_text(event.reply_token, '+ から位置情報を送ってね')
         else:
             post_kind(event.reply_token)
     elif re.search('観光地', received_text):
-        if pos is None:
+        if loc_dict is None:
             post_text(event.reply_token, '+ から位置情報を送ってね')
         else:
-            pos = get_user_pos(user_id)
-            result = get_tourist_spot(pos[0], pos[1])
+            result = get_tourist_spot(loc_dict['lat'], loc_dict['lng'])
             post_spot_carousel('tour', event.reply_token, result)
     elif re.search('ホテル', received_text):
-        if pos is None:
+        if loc_dict is None:
             post_text(event.reply_token, '+ から位置情報を送ってね')
         else:
-            result = get_hotel(pos[0], pos[1])
+            result = get_hotel(loc_dict['lat'], loc_dict['lng'])
             post_spot_carousel('hotel', event.reply_token, result)
     elif re.search('Wi-Fi', received_text) or re.search('WiFi', received_text):
-        if pos is None:
+        if loc_dict is None:
             post_text(event.reply_token, '+ から位置情報を送ってね')
         else:
-            result = get_hotel(pos[0], pos[1])
-            post_spot_carousel('wifi',event.reply_token, result)
+            result = get_wifi_spot(loc_dict['lat'], loc_dict['lng'])
+            post_spot_carousel('wifi', event.reply_token, result)
+    elif re.search('ひまつぶし', received_text) or re.search('WiFi', received_text):
+        reply = '未実装'
+        post_text(event.reply_token, reply)
+    elif re.search('ヘルプ', received_text) or re.search('WiFi', received_text):
+        reply = '''１．まずは、位置情報を送ってね。
+        入力フォームの左にある＋を押して「位置情報」をタップしてね\n２．行きたい場所を教えてね。
+        徳島県のオープンデータから「観光施設」「ホテル」「とくしま無料Wi-Fiスポット」を教えるよ'''
+        post_text(event.reply_token, reply)
     else:
         reply = get_reply(received_text)
-        #print(reply)
+        # print(reply)
         post_text(event.reply_token, reply)
+
 
 def post_text(token, text):
     line_bot_api.reply_message(
         token,
         TextSendMessage(text=text)
     )
+
 
 def post_location(token, title=None, address=None, latitude=None, longitude=None):
     location_message = LocationSendMessage(
@@ -172,6 +172,7 @@ def post_location(token, title=None, address=None, latitude=None, longitude=None
         location_message
     )
 
+
 def post_image(token, image_path):
     image_message = ImageSendMessage(
         original_content_url=image_path,
@@ -182,10 +183,11 @@ def post_image(token, image_path):
         image_message
     )
 
+
 def post_kind(token):
     payload = {
-        "replyToken":token,
-        "messages":[
+        "replyToken": token,
+        "messages": [
             {
                 "type": "template",
                 "altText": "select destination",
@@ -213,32 +215,32 @@ def post_kind(token):
             }
         ]
     }
-    #print(payload)
+    # print(payload)
     REPLY_ENDPOINT = 'https://api.line.me/v2/bot/message/reply'
     HEADER = {
         "Content-Type": "application/json",
-        "Authorization": "Bearer "+channel_access_token
+        "Authorization": "Bearer " + channel_access_token
     }
     requests.post(REPLY_ENDPOINT, headers=HEADER, data=json.dumps(payload))
 
+
 def post_spot_carousel(kind, token, place_list):
+    columns = None
     if kind is 'tour':
         columns = get_tourist_spot_columns(place_list)
     elif kind is 'hotel':
         columns = get_hotel_columns(place_list)
     elif kind is 'wifi':
         columns = get_wifi_spot_columns(place_list)
-    else:
-        return None
     payload = {
-        "replyToken":token,
-        "messages":[
+        "replyToken": token,
+        "messages": [
             {
-                "type" :"template",
-                "altText" :"this is template",
-                "template" :{
-                    "type" :"carousel",
-                    "columns" :columns
+                "type": "template",
+                "altText": "スポットのリスト",
+                "template": {
+                    "type": "carousel",
+                    "columns": columns
                 }
             }
         ]
@@ -246,33 +248,35 @@ def post_spot_carousel(kind, token, place_list):
     REPLY_ENDPOINT = 'https://api.line.me/v2/bot/message/reply'
     HEADER = {
         "Content-Type": "application/json",
-        "Authorization": "Bearer " +channel_access_token
+        "Authorization": "Bearer " + channel_access_token
     }
-    requests.post(REPLY_ENDPOINT, headers=HEADER,data=json.dumps(payload))
+    requests.post(REPLY_ENDPOINT, headers=HEADER, data=json.dumps(payload))
+
 
 def get_tourist_spot_columns(places):
     columns = []
     for place in places:
         columns.append({
-                "title": place['name'],
-                "text": place['address'],
-                "actions": [
-                    {
-                        "type": "postback",
-                        "label": "位置情報",
-                        "data": "action=loc&name="+place['name']+
-                                 "&address="+place['address']+
-                                 "&lng="+str(place['lng'])+
-                                 "&lat="+str(place['lat']),
-                    },
-                    {
-                        "type": "postback",
-                        "label": "詳しく",
-                        "data": "action=detail&name="+place['name'],
-                    }
-                ]
-            })
+            "title": place['name'],
+            "text": place['address'],
+            "actions": [
+                {
+                    "type": "postback",
+                    "label": "位置情報",
+                    "data": "action=loc&name=" + place['name'] +
+                            "&address=" + place['address'] +
+                            "&lat=" + str(place['lat']) +
+                            "&lng=" + str(place['lng'])
+                },
+                {
+                    "type": "postback",
+                    "label": "詳しく",
+                    "data": "action=detail&name=" + place['name'],
+                }
+            ]
+        })
     return columns
+
 
 def get_hotel_columns(places):
     columns = []
@@ -282,19 +286,19 @@ def get_hotel_columns(places):
             exist_hp = False
 
     for place in places:
-        print(type(place['url']))
+        print(type(place['url'])) #DEBUG
         actions = [
             {
                 "type": "postback",
                 "label": "位置情報",
                 "data": "action=loc&name=" + place['name'] +
                         "&address=" + place['address'] +
-                        "&lng=" + str(place['lng']) +
-                        "&lat=" + str(place['lat']),
-            },{
+                        "&lat=" + str(place['lat']) +
+                        "&lng=" + str(place['lng'])
+            }, {
                 "type": "uri",
                 "label": "電話",
-                "uri":str("tel:"+place['tel'])
+                "uri": str("tel:" + place['tel'])
             }
 
         ]
@@ -311,24 +315,26 @@ def get_hotel_columns(places):
         })
     return columns
 
+
 def get_wifi_spot_columns(places):
     columns = []
     for place in places:
         columns.append({
             "title": place['name'],
-            "text": place['address'],
+            "text": place['detail'],
             "actions": [
                 {
                     "type": "postback",
                     "label": "位置情報",
                     "data": "action=loc&name=" + place['name'] +
-                            "&address=" + place['address'] +
-                            "&lng=" + str(place['lng']) +
-                            "&lat=" + str(place['lat']),
-                },
+                        "&address=" + place['address'] +
+                        "&lat=" + str(place['lat']) +
+                        "&lng=" + str(place['lng'])
+        }
             ]
         })
     return columns
+
 
 if __name__ == "__main__":
     arg_parser = ArgumentParser(
