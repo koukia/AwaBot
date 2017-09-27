@@ -140,7 +140,20 @@ def receiveText(event):
             result = get_wifi_spot(loc_dict['lat'], loc_dict['lng'])
             post_spot_carousel('wifi', event.reply_token, result)
     elif re.search('ひまつぶし', received_text) or re.search('WiFi', received_text):
-        reply = '未実装'
+        mame = ['''藍染め（あいぞめ）は、徳島の特産物の一つで藍を染料として用いた染物なんよ。
+    藍染めは名前のとおり藍色の染色を行うことができて、色が褪(あ)せにくいという優れた特徴を持つんじょ！
+    日本では江戸時代には多くの藍染めが行われとって、そん中でも阿波藩での生産は盛んで、今でも徳島県の藍染めは全国的に有名なんよ！！''',
+        '''阿波おどりは、徳島県発祥の盆踊りで日本三大盆踊りのひとつで、約400年の歴史がある日本の伝統芸能があるんじょ。
+    その中でも徳島市の阿波おどりは、お盆になると人口約26万人の徳島市に全国から延べ135万人の観光客が集まるけん踊り子や観客数において国内最大規模なんじょ！''',
+        '''マチ★アソビは、アニメ制作会社ufotableが企画制作するアニメやゲームなどのエンターテインメントが集まるイベントなんじょ。
+    「マチをアソビつくす」ことがテーマになっとって、大都市や他の地方都市ではできない徳島の地理や魅力を活用した企画が実施されとんじょ！
+    例えば、市街で業界関係者のトークイベントがあったり、眉山ロープウェイでは車内に声優による案内が流れたりするんじょ！''',
+        '''眉山（びざん）は、徳島市街に隣接して徳島市の景観を代表する山なんじょ。
+    どの方向から眺めても眉に見えるから眉の山で眉山って名前になったらしいんよ''']
+        import random
+        index = random.randint(0, len(mame)-1)
+        print(index)
+        reply = mame[index]
         post_text(event.reply_token, reply)
     elif re.search('ヘルプ', received_text) or re.search('WiFi', received_text):
         reply = '''１．まずは、位置情報を送ってね。

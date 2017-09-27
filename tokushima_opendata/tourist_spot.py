@@ -59,7 +59,7 @@ def select_spot_list(place_list, key, max):
         selected_list = []
         for i in range(max):
             selected_list.append(sorted_list[i])
-            print(i,sorted_list[i])
+            #print(i,sorted_list[i])
 
         return selected_list
     except Exception as e:
