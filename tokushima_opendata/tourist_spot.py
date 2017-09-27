@@ -13,6 +13,7 @@ tourist_file_path       = "./tokushima_opendata/kankoshisetsu.csv"
 hotel_file_path         = "./tokushima_opendata/hotels.csv"
 tourism_hotel_file_path = "./tokushima_opendata/tebura_kanko_hotel.csv"
 wifi_file_path          = "./tokushima_opendata/TokushimaFreeWi-Fiスポット_登録データ一覧_2017年06月30日.csv"
+
 def get_tourist_spot(lng, lat):
     print('現在地:('+str(lng)+'  ,  '+str(lat)+')')
     data = pd.read_csv(tourist_file_path, header=1)#, encoding="SHIFT-JIS")
