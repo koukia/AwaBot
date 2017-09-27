@@ -116,7 +116,8 @@ def receiveText(event):
     global userLocDict
     user_id = event.source.sender_id
     received_text = event.message.text
-
+    print(userLocDict)
+    
     if user_id not in userLocDict and _DEBUG:
         userLocDict[user_id] = _DUMMY_POS
     if user_id in userLocDict:
@@ -169,7 +170,7 @@ def receiveText(event):
             post_text(event.reply_token, reply)
         except Exception as e:
             print(e)
-            
+
 def post_text(token, text):
     line_bot_api.reply_message(
         token,
