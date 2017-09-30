@@ -1,3 +1,5 @@
 env_set.sh
 .python-version
+__pycache__/*
+tokushima_opendata/__pycache__/*
 
